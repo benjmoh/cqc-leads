@@ -1,8 +1,9 @@
+import csv
 import os
 import sys
 import time
 from datetime import datetime, timezone
-from typing import Tuple
+from typing import Dict, List, Set, Tuple
 
 import requests
 
@@ -33,6 +34,11 @@ CAREHOMES_URL = (
     "&filters[]=services:care-home"
     "&filters[]=specialisms:all"
 )
+
+AIRTABLE_BASE_ID = "apphWtLxQpxaYaJhX"
+AIRTABLE_TABLE_NAME = "Leads"
+AIRTABLE_API_URL = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_NAME}"
+UNIQUE_ID_FIELD = "CQC Location ID (for office use only)"
 
 
 def timestamp_utc() -> str:
@@ -195,6 +201,179 @@ def download_csv(
     return False, last_error, 0, 0
 
 
+def parse_csv_file(path: str) -> List[Dict[str, str]]:
+    """Parse a CSV file into a list of dict rows."""
+    rows: List[Dict[str, str]] = []
+    try:
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                rows.append(row)
+    except FileNotFoundError:
+        print(f"[JOB] CSV file not found for parsing: {path}")
+    except Exception as e:  # noqa: BLE001
+        print(f"[JOB] Error while parsing CSV {path}: {e}")
+    return rows
+
+
+def fetch_existing_airtable_ids(token: str) -> Set[str]:
+    """
+    Fetch all existing records from Airtable and build a set of IDs
+    from the UNIQUE_ID_FIELD column.
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+    }
+    existing_ids: Set[str] = set()
+    params: Dict[str, str] = {}
+    offset: str | None = None
+
+    print("[JOB] Fetching existing Airtable records to build de-duplication set")
+
+    while True:
+        if offset:
+            params["offset"] = offset
+        else:
+            params.pop("offset", None)
+
+        try:
+            resp = requests.get(AIRTABLE_API_URL, headers=headers, params=params, timeout=30)
+        except requests.RequestException as e:
+            print(f"[JOB] Error fetching Airtable records: {e}")
+            raise
+
+        if resp.status_code != 200:
+            print(f"[JOB] Failed to fetch Airtable records, status={resp.status_code}, body={resp.text}")
+            raise RuntimeError(f"Failed to fetch Airtable records: {resp.status_code}")
+
+        data = resp.json()
+        records = data.get("records", [])
+
+        for rec in records:
+            fields = rec.get("fields", {})
+            value = fields.get(UNIQUE_ID_FIELD)
+            if isinstance(value, str) and value.strip():
+                existing_ids.add(value.strip())
+
+        offset = data.get("offset")
+        if not offset:
+            break
+
+    print(f"[JOB] Found {len(existing_ids)} existing Airtable IDs")
+    return existing_ids
+
+
+def upload_new_records_to_airtable(
+    token: str,
+    new_rows: List[Dict[str, str]],
+) -> int:
+    """
+    Upload new rows to Airtable in batches of 10.
+
+    Returns the number of successfully created records.
+    """
+    if not new_rows:
+        print("[JOB] No new rows to upload to Airtable")
+        return 0
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    created_count = 0
+    batch_size = 10
+
+    print(f"[JOB] Uploading {len(new_rows)} new records to Airtable in batches of {batch_size}")
+
+    for i in range(0, len(new_rows), batch_size):
+        batch = new_rows[i : i + batch_size]
+        payload = {"records": [{"fields": row} for row in batch]}
+
+        try:
+            resp = requests.post(AIRTABLE_API_URL, headers=headers, json=payload, timeout=30)
+        except requests.RequestException as e:
+            print(f"[JOB] Error uploading batch to Airtable: {e}")
+            raise
+
+        if resp.status_code not in (200, 201):
+            print(
+                "[JOB] Failed to upload batch to Airtable, "
+                f"status={resp.status_code}, body={resp.text}",
+            )
+            raise RuntimeError(f"Failed to upload batch to Airtable: {resp.status_code}")
+
+        data = resp.json()
+        batch_created = len(data.get("records", []))
+        created_count += batch_created
+        print(f"[JOB] Uploaded batch of {batch_created} records to Airtable")
+
+    print(f"[JOB] Finished uploading to Airtable, total created={created_count}")
+    return created_count
+
+
+def sync_rows_to_airtable(all_rows: List[Dict[str, str]]) -> bool:
+    """
+    De-duplicate rows against Airtable and append only new ones.
+
+    Logs:
+    - Total rows parsed
+    - Existing records found
+    - New rows added
+    - Skipped duplicates
+    """
+    token = os.environ.get("AIRTABLE_TOKEN")
+    if not token:
+        print("[JOB] AIRTABLE_TOKEN is not set; cannot sync to Airtable")
+        return False
+
+    total_rows = len(all_rows)
+    print(f"[JOB] Preparing to sync {total_rows} rows to Airtable")
+
+    try:
+        existing_ids = fetch_existing_airtable_ids(token)
+    except Exception as e:  # noqa: BLE001
+        print(f"[JOB] Aborting: failed to fetch existing Airtable IDs: {e}")
+        return False
+
+    existing_count = 0
+    duplicate_in_batch_count = 0
+    new_rows: List[Dict[str, str]] = []
+    seen_new_ids: Set[str] = set()
+
+    for row in all_rows:
+        unique_value = (row.get(UNIQUE_ID_FIELD) or "").strip()
+        if not unique_value:
+            # Skip rows without an ID, they cannot be deduplicated.
+            duplicate_in_batch_count += 1
+            continue
+
+        if unique_value in existing_ids:
+            existing_count += 1
+            continue
+
+        if unique_value in seen_new_ids:
+            duplicate_in_batch_count += 1
+            continue
+
+        seen_new_ids.add(unique_value)
+        new_rows.append(row)
+
+    print(f"[JOB] Total rows parsed: {total_rows}")
+    print(f"[JOB] Existing records found in Airtable: {existing_count}")
+    print(f"[JOB] Skipped duplicates or rows without ID: {duplicate_in_batch_count}")
+    print(f"[JOB] New rows to add to Airtable: {len(new_rows)}")
+
+    try:
+        created_count = upload_new_records_to_airtable(token, new_rows)
+    except Exception as e:  # noqa: BLE001
+        print(f"[JOB] Error while uploading new rows to Airtable: {e}")
+        return False
+
+    print(f"[JOB] New rows successfully added to Airtable: {created_count}")
+    return True
+
+
 def main() -> int:
     data_dir = os.environ.get("DATA_DIR", "./data")
     os.makedirs(data_dir, exist_ok=True)
@@ -233,12 +412,30 @@ def main() -> int:
         f"lines={carehomes_lines}, path={carehomes_path}, msg={carehomes_msg}",
     )
 
-    if homecare_ok and carehomes_ok:
-        print("[JOB] All downloads completed successfully")
-        return 0
+    if not (homecare_ok and carehomes_ok):
+        print("[JOB] One or more downloads failed")
+        return 1
 
-    print("[JOB] One or more downloads failed")
-    return 1
+    print("[JOB] Both CSV downloads completed successfully, starting Airtable sync")
+
+    # Parse CSVs and combine rows
+    homecare_rows = parse_csv_file(homecare_path)
+    carehomes_rows = parse_csv_file(carehomes_path)
+    combined_rows = homecare_rows + carehomes_rows
+
+    print(
+        f"[JOB] Parsed {len(homecare_rows)} homecare rows and "
+        f"{len(carehomes_rows)} carehomes rows (combined {len(combined_rows)})",
+    )
+
+    # Sync combined rows to Airtable
+    airtable_ok = sync_rows_to_airtable(combined_rows)
+    if not airtable_ok:
+        print("[JOB] Airtable sync failed")
+        return 1
+
+    print("[JOB] All downloads and Airtable sync completed successfully")
+    return 0
 
 
 if __name__ == "__main__":
