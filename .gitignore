@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+ENV/
+
+# Mac
+.DS_Store
+
+# Local data / downloads
+data/
+*.csv
+
+# Secrets
+.env
+
+# Logs
+*.log
