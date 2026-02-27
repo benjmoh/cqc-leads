@@ -13,7 +13,7 @@ TABLE_LEADS = "Leads"
 TABLE_DIRECTOR_ENRICHMENT = "Director Enrichment"
 
 PROVIDER_ID_FIELD = "CQC Provider ID"
-PROVIDER_NAME_FIELD = "Provider Name"
+PROVIDER_NAME_FIELD = "Provider name"
 DIRECTOR_NAME_FIELD = "Director Name"
 DIRECTOR_KEY_FIELD = "Director Key"
 ENRICHMENT_STATUS_FIELD = "Enrichment Status"
