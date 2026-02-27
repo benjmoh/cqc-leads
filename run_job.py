@@ -47,9 +47,9 @@ UNIQUE_ID_FIELD_FALLBACK = "CQC Location ID (for office use only)"
 # CQC provider details endpoint (for number of sites)
 CQC_PROVIDER_URL_TEMPLATE = "https://api.service.cqc.org.uk/public/v1/providers/{provider_id}"
 
-# Field names used for enrichment in Airtable
+# Field names used for enrichment in Airtable (must match Airtable column headers)
 FIELD_NUMBER_OF_SITES = "Number of Sites"
-FIELD_COMPANY_NUMBER = "Companies House Company Number"
+FIELD_COMPANY_NUMBER = "Company Number"
 FIELD_REGISTERED_ADDRESS = "Registered Office Address"
 FIELD_ACTIVE_DIRECTORS = "Active Directors"
 FIELD_ACTIVE_SECRETARIES = "Active Secretaries"
