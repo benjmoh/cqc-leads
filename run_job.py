@@ -391,6 +391,7 @@ def get_provider_id_from_row(row: Dict[str, str]) -> str:
         "providerId",
         "ProviderId",
         "Provider ID (for office use only)",
+        "CQC Provider ID (for office use only)",
     ]
     for key in candidates:
         value = (row.get(key) or "").strip()
