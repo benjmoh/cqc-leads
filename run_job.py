@@ -387,6 +387,7 @@ def get_provider_id_from_row(row: Dict[str, str]) -> str:
     Attempt to extract a provider identifier from the CSV row.
     """
     candidates = [
+        "CQC Provider ID",
         "Provider ID",
         "providerId",
         "ProviderId",
@@ -683,6 +684,19 @@ def sync_rows_to_airtable(all_rows: List[Dict[str, str]]) -> bool:
     if not filtered_and_enriched_rows:
         print("[JOB] No rows left after CQC site filter / enrichment; nothing to sync to Airtable")
         return True
+
+    # Normalize legacy CQC field names to current Airtable schema and
+    # drop the old "(for office use only)" variants to avoid UNKNOWN_FIELD_NAME.
+    for row in filtered_and_enriched_rows:
+        legacy_mappings = [
+            ("CQC Provider ID (for office use only)", "CQC Provider ID"),
+            ("CQC Location ID (for office use only)", "CQC Location ID"),
+        ]
+        for old_key, new_key in legacy_mappings:
+            if old_key in row:
+                if new_key not in row or not row[new_key]:
+                    row[new_key] = row[old_key]
+                row.pop(old_key, None)
 
     print(f"[JOB] {len(filtered_and_enriched_rows)} rows remain after CQC site filter; fetching Airtable IDs")
 
