@@ -241,6 +241,65 @@ Confirm that your service responds with:
 
 ---
 
+## Render Scheduled Job (Cron) Setup
+
+In addition to the web service, you can configure a **Render Scheduled Job** that runs the CSV download once on a cron schedule.
+
+### 1. Create a Scheduled Job
+
+1. In Render, click **New > Cron Job**.
+2. Use the **same repository** as the web service.
+3. **Environment**: `Docker` (it will reuse the same Dockerfile).
+
+### 2. Command and schedule
+
+- **Docker Command**:
+
+  ```text
+  python3 run_job.py
+  ```
+
+- **Schedule** (as requested):
+
+  ```text
+  0 9 * * 5
+  ```
+
+  This runs every Friday at 09:00 UTC (or according to your configured timezone in Render).
+
+### 3. Environment and disk
+
+Configure the same environment variables as the web service:
+
+- **DATA_DIR**: `/data` (recommended; matches the web service and Dockerfile).
+
+Optionally also set:
+
+- **RUN_TOKEN**: not required for `run_job.py`, but safe to keep consistent with your web service.
+
+Attach a **persistent disk** (or reuse an existing one) with:
+
+- **Mount Path**: `/data`
+
+The job will:
+
+- Read `DATA_DIR` (default `./data` if not set, but `/data` is recommended on Render).
+- Create it if needed.
+- Download and save:
+  - `cqc_homecare_YYYYMMDD_HHMMSSZ.csv`
+  - `cqc_carehomes_YYYYMMDD_HHMMSSZ.csv`
+- Log:
+  - Start and end messages.
+  - HTTP status codes.
+  - Bytes downloaded.
+  - Approximate number of lines.
+  - Final paths for both files.
+- Exit with:
+  - **Code `0`** if both downloads succeed.
+  - **Non-zero** if any download fails (so Render will mark the job as failed).
+
+---
+
 ## Zapier Integration
 
 Zapier will:
