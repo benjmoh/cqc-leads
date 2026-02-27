@@ -7,6 +7,8 @@ from typing import Dict, List, Tuple
 
 import requests
 
+from director_explode import main as director_explode_main
+
 
 HOMECARE_URL = (
     "https://www.cqc.org.uk/search/all?query=&location-query=&radius="
@@ -805,13 +807,22 @@ def main() -> int:
         f"{len(carehomes_rows)} carehomes rows (combined {len(combined_rows)})",
     )
 
-    # Sync combined rows to Airtable
+    # Sync combined rows to Airtable (Phase 1)
     airtable_ok = sync_rows_to_airtable(combined_rows)
     if not airtable_ok:
         print("[JOB] Airtable sync failed")
         return 1
 
     print("[JOB] All downloads and Airtable sync completed successfully")
+
+    # Phase 2: explode directors from Leads into Director Enrichment
+    print("[JOB] Starting director explode Phase 2")
+    director_exit_code = director_explode_main()
+    if director_exit_code != 0:
+        print("[JOB] Director explode Phase 2 failed")
+        return 1
+
+    print("[JOB] Director explode Phase 2 completed successfully")
     return 0
 
 
