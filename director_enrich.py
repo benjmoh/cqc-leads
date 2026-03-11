@@ -57,8 +57,13 @@ def _hunter_email_for_director(name: str, domain: str) -> Dict[str, Any]:
         print("[DIR] HUNTER_API_KEY not set; skipping Hunter")
         return {}
 
-    first, *rest = name.split()
-    last = rest[-1] if rest else ""
+    # Split the director name into first/last components for Hunter.
+    # Many entries will be "First Last", but we also see single-word
+    # names (e.g. "QUINN"). Hunter requires a last_name, so for a
+    # single token we treat it as both first and last.
+    tokens = name.split()
+    first = tokens[0] if tokens else ""
+    last = tokens[-1] if len(tokens) > 1 else first
 
     params: Dict[str, Any] = {
         "api_key": api_key,
