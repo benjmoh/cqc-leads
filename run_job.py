@@ -59,24 +59,50 @@ FIELD_ACTIVE_DIRECTORS = "Active Directors"
 FIELD_ACTIVE_SECRETARIES = "Active Secretaries"
 
 
-# Some columns in the CQC CSV (e.g. "Distance (miles away)") are useful for
-# search but do not exist as fields in Airtable. Attempting to send them in
-# the Airtable payload causes 422 UNKNOWN_FIELD_NAME errors, so we filter them
-# out before creating/updating records.
-DISALLOWED_AIRTABLE_FIELDS: set[str] = {
-    "Distance (miles away)",
+# Allowed Airtable fields:
+# - Core CQC CSV columns we care about (excluding search-only fields like
+#   distance and relevance score)
+# - Normalised ID fields
+# - Enrichment fields added during the pipeline.
+ALLOWED_AIRTABLE_FIELDS: set[str] = {
+    # Base CSV fields
+    "Name",
+    "Address 1",
+    "Address 2",
+    "Town/City",
+    "County",
+    "Postcode",
+    "Phone number",
+    "Website",
+    "Local authority",
+    "Region",
+    "Report publication date",
+    "URL",
+    "Also known as",
+    "Specialisms/services",
+    "Service types",
+    "Provider name",
+    # Normalised ID fields (after we normalise "(for office use only)" names)
+    "CQC Provider ID",
+    "CQC Location ID",
+    # Enrichment fields
+    FIELD_NUMBER_OF_SITES,
+    FIELD_COMPANY_NUMBER,
+    FIELD_REGISTERED_ADDRESS,
+    FIELD_ACTIVE_DIRECTORS,
+    FIELD_ACTIVE_SECRETARIES,
 }
 
 
 def _filter_fields_for_airtable(row: Dict[str, str]) -> Dict[str, str]:
     """
-    Return a copy of row excluding fields that are not expected in Airtable.
+    Return a copy of row containing only fields we expect in Airtable.
 
     This prevents UNKNOWN_FIELD_NAME errors when CQC adds extra columns
-    (e.g. Distance, Relevance score) that we don't have corresponding columns
-    for in the Leads table.
+    (e.g. "Distance (miles away)", "Relevance score") that do not exist
+    as columns in the Leads table.
     """
-    return {k: v for k, v in row.items() if k not in DISALLOWED_AIRTABLE_FIELDS}
+    return {k: v for k, v in row.items() if k in ALLOWED_AIRTABLE_FIELDS}
 
 
 def timestamp_utc() -> str:
