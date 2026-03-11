@@ -220,16 +220,43 @@ def download_csv(
 
 
 def parse_csv_file(path: str) -> List[Dict[str, str]]:
-    """Parse a CSV file into a list of dict rows, skipping completely empty rows."""
+    """
+    Parse a CSV file into a list of dict rows, skipping completely empty rows.
+
+    The CQC search exports now include a preamble line like:
+      "We found XX results for ..."
+    before the actual CSV header. We therefore scan for the real header line,
+    which contains the expected column names such as "Name" and
+    "CQC Provider ID (for office use only)".
+    """
     rows: List[Dict[str, str]] = []
     try:
         with open(path, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                # Skip rows where all values are empty/whitespace
-                if not any(str(value).strip() for value in row.values() if value is not None):
-                    continue
-                rows.append(row)
+            all_lines = list(f)
+
+        # Find the index of the real header line.
+        header_idx = None
+        for i, line in enumerate(all_lines):
+            if "Name," in line and "CQC Provider ID (for office use only)" in line:
+                header_idx = i
+                break
+
+        if header_idx is None:
+            print(f"[JOB] Could not find CSV header in {path}; skipping file")
+            return []
+
+        # Rebuild a CSV stream starting from the header line.
+        from io import StringIO
+
+        csv_text = "".join(all_lines[header_idx:])
+        f2 = StringIO(csv_text)
+        reader = csv.DictReader(f2)
+
+        for row in reader:
+            # Skip rows where all values are empty/whitespace
+            if not any(str(value).strip() for value in row.values() if value is not None):
+                continue
+            rows.append(row)
     except FileNotFoundError:
         print(f"[JOB] CSV file not found for parsing: {path}")
     except Exception as e:  # noqa: BLE001
