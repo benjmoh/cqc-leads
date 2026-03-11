@@ -59,6 +59,26 @@ FIELD_ACTIVE_DIRECTORS = "Active Directors"
 FIELD_ACTIVE_SECRETARIES = "Active Secretaries"
 
 
+# Some columns in the CQC CSV (e.g. "Distance (miles away)") are useful for
+# search but do not exist as fields in Airtable. Attempting to send them in
+# the Airtable payload causes 422 UNKNOWN_FIELD_NAME errors, so we filter them
+# out before creating/updating records.
+DISALLOWED_AIRTABLE_FIELDS: set[str] = {
+    "Distance (miles away)",
+}
+
+
+def _filter_fields_for_airtable(row: Dict[str, str]) -> Dict[str, str]:
+    """
+    Return a copy of row excluding fields that are not expected in Airtable.
+
+    This prevents UNKNOWN_FIELD_NAME errors when CQC adds extra columns
+    (e.g. Distance, Relevance score) that we don't have corresponding columns
+    for in the Leads table.
+    """
+    return {k: v for k, v in row.items() if k not in DISALLOWED_AIRTABLE_FIELDS}
+
+
 def timestamp_utc() -> str:
     """Return UTC timestamp formatted as YYYYMMDD_HHMMSSZ."""
     now = datetime.now(timezone.utc)
@@ -339,7 +359,11 @@ def upload_new_records_to_airtable(
 
     for i in range(0, len(new_rows), batch_size):
         batch = new_rows[i : i + batch_size]
-        payload = {"records": [{"fields": row} for row in batch]}
+        payload = {
+            "records": [
+                {"fields": _filter_fields_for_airtable(row)} for row in batch
+            ],
+        }
 
         try:
             resp = requests.post(AIRTABLE_API_URL, headers=headers, json=payload, timeout=30)
@@ -388,7 +412,18 @@ def update_records_in_airtable(
     print(f"[JOB] Updating {len(records_to_update)} existing records in Airtable in batches of {batch_size}")
 
     for i in range(0, len(records_to_update), batch_size):
-        batch = records_to_update[i : i + batch_size]
+        # Filter disallowed fields from each record's "fields" before PATCH.
+        raw_batch = records_to_update[i : i + batch_size]
+        batch: List[Dict[str, Dict[str, str]]] = []
+        for rec in raw_batch:
+            fields = rec.get("fields", {})
+            safe_fields = _filter_fields_for_airtable(fields)
+            batch.append(
+                {
+                    "id": rec["id"],
+                    "fields": safe_fields,
+                },
+            )
         payload = {"records": batch}
 
         try:
