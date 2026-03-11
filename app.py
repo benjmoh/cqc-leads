@@ -9,6 +9,8 @@ from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
+from director_enrich import enrich_director_record
+
 
 HOMECARE_URL = (
     "https://www.cqc.org.uk/search/all?query=&location-query=&radius="
@@ -270,6 +272,33 @@ async def run_downloads(request: Request, x_auth_token: Optional[str] = Header(d
 
     print(f"[RUN] Completed with status={status}")
     return JSONResponse(content=resp_body)
+
+
+@app.post("/director-enrich")
+async def director_enrich_endpoint(
+    request: Request,
+    x_auth_token: Optional[str] = Header(default=None),
+) -> JSONResponse:
+    """
+    Enrich a single Director Enrichment record.
+
+    Expects JSON body: {"record_id": "<Airtable record ID>"}.
+    Intended to be called from Zapier or other automation.
+    """
+    require_token_header(x_auth_token)
+
+    body = await request.json()
+    record_id = body.get("record_id")
+    if not record_id:
+        raise HTTPException(status_code=400, detail="Missing 'record_id' in request body")
+
+    try:
+        result = enrich_director_record(str(record_id))
+    except Exception as exc:  # noqa: BLE001
+        print(f"[DIR] Error in /director-enrich for {record_id}: {exc}")
+        raise HTTPException(status_code=500, detail="Director enrichment failed")
+
+    return JSONResponse(content=result)
 
 
 @app.get("/files/{filename}")

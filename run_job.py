@@ -8,6 +8,8 @@ from typing import Dict, List, Tuple
 import requests
 
 from director_explode import main as director_explode_main
+from companies_sync import sync_companies_from_leads
+from companies_enrich import enrich_companies
 
 
 HOMECARE_URL = (
@@ -815,14 +817,34 @@ def main() -> int:
 
     print("[JOB] All downloads and Airtable sync completed successfully")
 
-    # Phase 2: explode directors from Leads into Director Enrichment
-    print("[JOB] Starting director explode Phase 2")
-    director_exit_code = director_explode_main()
-    if director_exit_code != 0:
-        print("[JOB] Director explode Phase 2 failed")
+    # Phase 2: sync Companies table from Leads (one row per provider)
+    print("[JOB] Starting Companies sync Phase 2")
+    try:
+        sync_companies_from_leads()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[JOB] Companies sync Phase 2 failed: {exc}")
         return 1
 
-    print("[JOB] Director explode Phase 2 completed successfully")
+    print("[JOB] Companies sync Phase 2 completed successfully")
+
+    # Phase 3: enrich Companies with domain/website/LinkedIn via SerpAPI
+    print("[JOB] Starting Companies enrichment Phase 3")
+    try:
+        enrich_companies(limit=50)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[JOB] Companies enrichment Phase 3 failed: {exc}")
+        return 1
+
+    print("[JOB] Companies enrichment Phase 3 completed successfully")
+
+    # Phase 4: explode directors from Leads into Director Enrichment
+    print("[JOB] Starting director explode Phase 4")
+    director_exit_code = director_explode_main()
+    if director_exit_code != 0:
+        print("[JOB] Director explode Phase 4 failed")
+        return 1
+
+    print("[JOB] Director explode Phase 4 completed successfully")
     return 0
 
 
