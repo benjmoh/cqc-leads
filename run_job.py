@@ -390,18 +390,32 @@ def get_provider_id_from_row(row: Dict[str, str]) -> str:
     """
     Attempt to extract a provider identifier from the CSV row.
     """
+    # First try exact header matches for known variants, including the current
+    # CQC export header "CQC Provider ID (for office use only)".
     candidates = [
+        "CQC Provider ID (for office use only)",
         "CQC Provider ID",
         "Provider ID",
         "providerId",
         "ProviderId",
         "Provider ID (for office use only)",
-        "CQC Provider ID (for office use only)",
     ]
     for key in candidates:
         value = (row.get(key) or "").strip()
         if value:
             return value
+
+    # Fallback: be more tolerant to header changes by normalising keys.
+    # Any column whose header, lowercased and stripped, contains
+    # "cqc provider id" will be treated as the provider id.
+    normalised_target = "cqc provider id"
+    for header, value in row.items():
+        if not value:
+            continue
+        header_norm = (header or "").strip().lower()
+        if normalised_target in header_norm:
+            return str(value).strip()
+
     return ""
 
 
